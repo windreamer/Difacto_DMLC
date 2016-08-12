@@ -4,6 +4,9 @@
 #include "config.pb.h"
 #include "dmlc/data.h"
 #include "dmlc/io.h"
+#define LOG_LOSS 0
+#define L2_LOSS 1
+
 namespace dmlc {
 namespace difacto {
 
@@ -26,6 +29,7 @@ class Loss {
        const std::vector<int>& model_siz,
        const Config& conf) {
     nt_ = conf.num_threads();
+    loss_type_ = conf.loss_type();
 
     // init w
     w.Load(0, data, model, model_siz);
@@ -90,6 +94,8 @@ class Loss {
     prog->auc()    = eval.AUC();
     prog->new_ex() = w.X.size;
     prog->count()  = 1;
+    prog->rmse()   = eval.RMSE();
+
     // prog->copc()   = eval.Copc();
   }
 
@@ -102,10 +108,19 @@ class Loss {
   void CalcGrad(std::vector<T>* grad) {
     // p = ... (reuse py_)
     CHECK_EQ(py_.size(), w.X.size) << "call *evaluate* first";
+    if (loss_type_ == LOG_LOSS) {
 #pragma omp parallel for num_threads(nt_)
-    for (size_t i = 0; i < py_.size(); ++i) {
-      T y = w.X.label[i] > 0 ? 1 : -1;
-      py_[i] = - y / ( 1 + exp ( y * py_[i] ));
+        for (size_t i = 0; i < py_.size(); ++i) {
+          T y = w.X.label[i] > 0 ? 1 : -1;
+          py_[i] = - y / ( 1 + exp ( y * py_[i] ));
+        }
+    } else if (loss_type_ == L2_LOSS) {
+#pragma omp parallel for num_threads(nt_)
+        for (size_t i = 0; i < py_.size(); ++i) {
+          py_[i] = py_[i] - w.X.label[i];
+        }
+    } else {
+        CHECK(0) << "unknown loss_type: " << loss_type_;
     }
 
     // grad_w = ...
@@ -281,6 +296,7 @@ class Loss {
 
   std::vector<T> py_;
   int nt_;  // number of threads
+  int loss_type_;
 };
 
 }  // namespace difacto

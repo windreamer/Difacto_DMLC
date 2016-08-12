@@ -88,6 +88,16 @@ class BinClassEval {
     return clk / clk_exp;
   }
 
+  V RMSE() {
+      V se = 0;
+#pragma omp parallel for reduction(+:se) num_threads(nt_)
+      for (size_t i = 0; i < size_; ++i) {
+          V y = label_[i] - predict_[i];
+          se += y * y;
+      }
+      return sqrt(se / size_);
+  }
+
  private:
   V const* label_;
   V const* predict_;
